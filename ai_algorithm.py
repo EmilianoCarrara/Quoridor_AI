@@ -1,6 +1,8 @@
 import requests
 import random
+import time
 from queue import PriorityQueue
+from copy import deepcopy
 
 BASE_URL = "http://127.0.0.1:8000"
 
@@ -56,11 +58,12 @@ def minimax(state, depth, alpha, beta, maximizing):
 
     best_move = None
     moves = ['U', 'D', 'L', 'R']
-
+    
     if maximizing:
         max_eval = float('-inf')
         for move_dir in moves:
-            new_state = send_move(move_dir)["game_state"]
+            new_state = deepcopy(state)
+            new_state["game_state"] = send_move(move_dir)["game_state"]
             eval, _ = minimax(new_state, depth-1, alpha, beta, False)
             if eval > max_eval:
                 max_eval, best_move = eval, move_dir
@@ -71,7 +74,8 @@ def minimax(state, depth, alpha, beta, maximizing):
     else:
         min_eval = float('inf')
         for move_dir in moves:
-            new_state = send_move(move_dir)["game_state"]
+            new_state = deepcopy(state)
+            new_state["game_state"] = send_move(move_dir)["game_state"]
             eval, _ = minimax(new_state, depth-1, alpha, beta, True)
             min_eval = min(min_eval, eval)
             beta = min(beta, eval)
@@ -79,9 +83,35 @@ def minimax(state, depth, alpha, beta, maximizing):
                 break
         return min_eval, None
 
-# Simple Monte Carlo Tree Search (MCTS)
-def simple_mcts_move():
-    return random.choice(['U', 'D', 'L', 'R'])
+# Monte Carlo Tree Search (MCTS)
+def mcts(state, simulations=100):
+    moves = ['U', 'D', 'L', 'R']
+    scores = {move: 0 for move in moves}
+    
+    for move in moves:
+        for _ in range(simulations):
+            simulated_state = deepcopy(state)
+            simulated_state["game_state"] = send_move(move)["game_state"]
+            if simulated_state["winner"] == "player1":
+                scores[move] += 1
+            elif simulated_state["winner"] == "player2":
+                scores[move] -= 1
+    
+    best_move = max(scores, key=scores.get)
+    return best_move
+
+# A* Search for best move
+def astar_move(state):
+    moves = ['U', 'D', 'L', 'R']
+    best_score = float('inf')
+    best_move = None
+    for move_dir in moves:
+        simulated_state = deepcopy(state)
+        simulated_state["game_state"] = send_move(move_dir)["game_state"]
+        score = a_star(simulated_state["board"], simulated_state["player_positions"]["player1"], [0])
+        if score < best_score:
+            best_score, best_move = score, move_dir
+    return best_move
 
 # Main AI Decision function
 def ai_decide(strategy, state):
@@ -89,17 +119,9 @@ def ai_decide(strategy, state):
         _, best_move = minimax(state, depth=3, alpha=float('-inf'), beta=float('inf'), maximizing=True)
         return best_move
     elif strategy == 'mcts':
-        return simple_mcts_move()
+        return mcts(state)
     elif strategy == 'astar':
-        moves = ['U', 'D', 'L', 'R']
-        best_score = float('inf')
-        best_move = None
-        for move_dir in moves:
-            simulated_state = send_move(move_dir)["game_state"]
-            score = a_star(simulated_state["board"], simulated_state["player_positions"]["player1"], [0])
-            if score < best_score:
-                best_score, best_move = score, move_dir
-        return best_move
+        return astar_move(state)
     else:
         return random.choice(['U', 'D', 'L', 'R'])
 
@@ -116,6 +138,7 @@ def main(strategy='minimax'):
                 break
         else:
             print("Waiting for opponent...")
+            time.sleep(1)
 
 if __name__ == "__main__":
     selected_strategy = input(f"Select AI strategy {STRATEGIES}: ")
