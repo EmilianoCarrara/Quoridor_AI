@@ -1,28 +1,20 @@
-import requests
 import random
-import time
 from queue import PriorityQueue
 from copy import deepcopy
 
-BASE_URL = "http://127.0.0.1:8000"
-
-# Define available strategies
-STRATEGIES = ['minimax', 'mcts', 'astar']
-
-# Get game state from the API
-def get_game_state():
-    return requests.get(f"{BASE_URL}/state").json()
-
-# Send a move to the API
-def send_move(direction):
-    return requests.post(f"{BASE_URL}/move", json={"direction": direction}).json()
-
-# Send a wall placement to the API
-def send_wall(x, y, orientation):
-    return requests.post(f"{BASE_URL}/wall", json={"x": x, "y": y, "orientation": orientation}).json()
-
 # A* Search (Heuristic)
 def a_star(board, start, goal_rows):
+    """
+    Implements the A* pathfinding algorithm to find the shortest path.
+
+    Args:
+        board (list): The current game board.
+        start (tuple): The starting position on the board.
+        goal_rows (list): The goal rows (either row 0 or 8).
+
+    Returns:
+        int: The cost of the shortest path to the goal.
+    """
     frontier = PriorityQueue()
     frontier.put((0, start))
     came_from = {start: None}
@@ -47,12 +39,34 @@ def a_star(board, start, goal_rows):
 
 # Heuristic evaluation
 def heuristic(state):
+    """
+    Evaluates the desirability of a game state using A* pathfinding to determine distances.
+
+    Args:
+        state (dict): The current game state.
+
+    Returns:
+        int: The difference between the AI's path and the opponent's path.
+    """
     ai_path = a_star(state["board"], state["player_positions"]["player1"], [0])
     opponent_path = a_star(state["board"], state["player_positions"]["player2"], [8])
     return opponent_path - ai_path
 
 # Minimax with Alpha-Beta Pruning
 def minimax(state, depth, alpha, beta, maximizing):
+    """
+    Implements the Minimax algorithm with Alpha-Beta Pruning to evaluate moves.
+
+    Args:
+        state (dict): The current game state.
+        depth (int): The depth of the search tree.
+        alpha (float): The alpha value for pruning.
+        beta (float): The beta value for pruning.
+        maximizing (bool): A flag indicating whether we are maximizing or minimizing.
+
+    Returns:
+        tuple: The evaluation score and the best move.
+    """
     if depth == 0 or state["winner"]:
         return heuristic(state), None
 
@@ -63,7 +77,6 @@ def minimax(state, depth, alpha, beta, maximizing):
         max_eval = float('-inf')
         for move_dir in moves:
             new_state = deepcopy(state)
-            new_state["game_state"] = send_move(move_dir)["game_state"]
             eval, _ = minimax(new_state, depth-1, alpha, beta, False)
             if eval > max_eval:
                 max_eval, best_move = eval, move_dir
@@ -75,7 +88,6 @@ def minimax(state, depth, alpha, beta, maximizing):
         min_eval = float('inf')
         for move_dir in moves:
             new_state = deepcopy(state)
-            new_state["game_state"] = send_move(move_dir)["game_state"]
             eval, _ = minimax(new_state, depth-1, alpha, beta, True)
             min_eval = min(min_eval, eval)
             beta = min(beta, eval)
@@ -85,13 +97,22 @@ def minimax(state, depth, alpha, beta, maximizing):
 
 # Monte Carlo Tree Search (MCTS)
 def mcts(state, simulations=100):
+    """
+    Implements the Monte Carlo Tree Search (MCTS) to evaluate moves.
+
+    Args:
+        state (dict): The current game state.
+        simulations (int): The number of simulations to run.
+
+    Returns:
+        str: The best move based on the simulations.
+    """
     moves = ['U', 'D', 'L', 'R']
     scores = {move: 0 for move in moves}
     
     for move in moves:
         for _ in range(simulations):
             simulated_state = deepcopy(state)
-            simulated_state["game_state"] = send_move(move)["game_state"]
             if simulated_state["winner"] == "player1":
                 scores[move] += 1
             elif simulated_state["winner"] == "player2":
@@ -100,48 +121,19 @@ def mcts(state, simulations=100):
     best_move = max(scores, key=scores.get)
     return best_move
 
-# A* Search for best move
-def astar_move(state):
-    moves = ['U', 'D', 'L', 'R']
-    best_score = float('inf')
-    best_move = None
-    for move_dir in moves:
-        simulated_state = deepcopy(state)
-        simulated_state["game_state"] = send_move(move_dir)["game_state"]
-        score = a_star(simulated_state["board"], simulated_state["player_positions"]["player1"], [0])
-        if score < best_score:
-            best_score, best_move = score, move_dir
-    return best_move
-
 # Main AI Decision function
-def ai_decide(strategy, state):
-    if strategy == 'minimax':
-        _, best_move = minimax(state, depth=3, alpha=float('-inf'), beta=float('inf'), maximizing=True)
-        return best_move
-    elif strategy == 'mcts':
-        return mcts(state)
-    elif strategy == 'astar':
-        return astar_move(state)
-    else:
-        return random.choice(['U', 'D', 'L', 'R'])
+def ai_decide(strategies, state):
+    """
+    Decides the best move for the AI based on the selected combination of strategies.
+    The AI evaluates each move based on the combination of Minimax, A*, and MCTS.
 
-# Game loop
-def main(strategy='minimax'):
-    while True:
-        state = get_game_state()
-        if state['turn'] == 'player1':
-            move = ai_decide(strategy, state)
-            result = send_move(move)
-            print(f"AI ({strategy}) moved {move}")
-            if result['winner']:
-                print(f"Winner is {result['winner']}!")
-                break
-        else:
-            print("Waiting for opponent...")
-            time.sleep(1)
+    Args:
+        strategies (tuple): A tuple of selected strategies (e.g., ('minimax', 'astar')).
+        state (dict): The current game state.
 
-if __name__ == "__main__":
-    selected_strategy = input(f"Select AI strategy {STRATEGIES}: ")
-    if selected_strategy not in STRATEGIES:
-        selected_strategy = 'minimax'
-    main(strategy=selected_strategy)
+    Returns:
+        str: The best move selected based on the combined strategies.
+
+
+    ALL THE ALGORITHMS NEED TO BE REVIEWED AND THE ACTUAL STRATEGY TO SELECT THE BEST NEXT MOVE DEPENDING ON THE COMBINATION OF STRATEGIES HAS YET TO BE DEFINED
+    """
